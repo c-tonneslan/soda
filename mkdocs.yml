@@ -1,0 +1,49 @@
+site_name: soda
+site_description: A CLI for Socrata-based open data portals
+site_url: https://c-tonneslan.github.io/soda/
+repo_url: https://github.com/c-tonneslan/soda
+repo_name: c-tonneslan/soda
+edit_uri: edit/main/docs/
+
+theme:
+  name: material
+  features:
+    - navigation.sections
+    - navigation.expand
+    - content.code.copy
+  palette:
+    - scheme: default
+      primary: blue
+      accent: blue
+    - scheme: slate
+      primary: blue
+      accent: blue
+
+nav:
+  - Home: index.md
+  - Install: install.md
+  - Quick start: quick-start.md
+  - Adding a portal: adding_a_portal.md
+  - Commands:
+    - portals / ls / info: commands/discovery.md
+    - pull: commands/pull.md
+    - stats / open: commands/utility.md
+    - search: commands/search.md
+    - watch: commands/watch.md
+    - diff: commands/diff.md
+  - Recipes:
+    - Build a local SQLite database: recipes/sqlite.md
+    - Daily change detection: recipes/change_detection.md
+    - SoQL filter reference: recipes/soql.md
+  - Changelog: changelog.md
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - pymdownx.details
+  - pymdownx.highlight
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true
+  - toc:
+      permalink: true

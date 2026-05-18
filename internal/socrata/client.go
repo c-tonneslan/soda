@@ -219,6 +219,46 @@ type PullOptions struct {
 	Select string // SoQL $select clause
 }
 
+// Pages returns one page of rows as a []map[string]any (only meaningful for
+// JSON output). Used by auto-pagination to walk the whole dataset.
+func (c *Client) Pages(ctx context.Context, host, fourByFour string, opts PullOptions) ([]map[string]any, error) {
+	opts.Format = FormatJSON
+	body, err := c.Rows(ctx, host, fourByFour, opts)
+	if err != nil {
+		return nil, err
+	}
+	defer body.Close()
+	var rows []map[string]any
+	if err := json.NewDecoder(body).Decode(&rows); err != nil {
+		return nil, fmt.Errorf("decode page: %w", err)
+	}
+	return rows, nil
+}
+
+// Count returns the total row count for a dataset.
+func (c *Client) Count(ctx context.Context, host, fourByFour string, where string) (int64, error) {
+	opts := PullOptions{Format: FormatJSON, Select: "count(*)"}
+	if where != "" {
+		opts.Where = where
+	}
+	body, err := c.Rows(ctx, host, fourByFour, opts)
+	if err != nil {
+		return 0, err
+	}
+	defer body.Close()
+	var out []struct {
+		Count string `json:"count"`
+	}
+	if err := json.NewDecoder(body).Decode(&out); err != nil {
+		return 0, fmt.Errorf("decode count: %w", err)
+	}
+	if len(out) == 0 {
+		return 0, nil
+	}
+	n, _ := strconv.ParseInt(out[0].Count, 10, 64)
+	return n, nil
+}
+
 // Rows streams the response body for /resource/<id>.<format> with the given
 // query options. The caller is responsible for closing the body.
 func (c *Client) Rows(ctx context.Context, host, fourByFour string, opts PullOptions) (io.ReadCloser, error) {
