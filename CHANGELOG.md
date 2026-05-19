@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- HTTP client retries on 429 and 5xx with exponential backoff (3 attempts
+  by default, honors `Retry-After`). Most anonymous-token Socrata workflows
+  now ride out a brief rate-limit hiccup instead of failing on first hit.
+  `Client.MaxRetries` and `Client.RetryBase` knobs for library users.
+
 ## 0.4.0 — 2026-05-17
 
 Docs and distribution.

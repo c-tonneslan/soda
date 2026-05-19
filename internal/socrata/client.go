@@ -21,12 +21,23 @@ import (
 const (
 	defaultTimeout    = 60 * time.Second
 	discoveryEndpoint = "https://api.us.socrata.com/api/catalog/v1"
+	defaultMaxRetries = 3
+	defaultRetryBase  = 500 * time.Millisecond
 )
 
 // Client talks to one Socrata portal at a time, plus the global Discovery API.
 type Client struct {
 	HTTP    *http.Client
 	AppToken string // optional Socrata App Token; required for high-volume use, otherwise rate-limited
+
+	// MaxRetries is the number of additional attempts on retryable
+	// responses (HTTP 429 and 5xx). Zero disables retries; <0 leaves it
+	// at the default (3).
+	MaxRetries int
+	// RetryBase is the base delay for exponential backoff between
+	// retries. Zero leaves it at the default (500ms). A Retry-After
+	// header from the server overrides this for that one attempt.
+	RetryBase time.Duration
 }
 
 // New returns a client with a 60s timeout.
@@ -292,7 +303,7 @@ func (c *Client) Rows(ctx context.Context, host, fourByFour string, opts PullOpt
 	if c.AppToken != "" {
 		req.Header.Set("X-App-Token", c.AppToken)
 	}
-	resp, err := c.HTTP.Do(req)
+	resp, err := c.doWithRetry(req)
 	if err != nil {
 		return nil, fmt.Errorf("rows: %w", err)
 	}
@@ -336,7 +347,7 @@ func (c *Client) get(ctx context.Context, url string) ([]byte, error) {
 	if c.AppToken != "" {
 		req.Header.Set("X-App-Token", c.AppToken)
 	}
-	resp, err := c.HTTP.Do(req)
+	resp, err := c.doWithRetry(req)
 	if err != nil {
 		return nil, fmt.Errorf("get %s: %w", url, err)
 	}
@@ -349,6 +360,69 @@ func (c *Client) get(ctx context.Context, url string) ([]byte, error) {
 		return nil, &APIError{Status: resp.StatusCode, URL: url, Body: string(body)}
 	}
 	return body, nil
+}
+
+// doWithRetry runs req with backoff on retryable responses. Socrata
+// rate-limits any anonymous client aggressively, so a quick exponential
+// retry on 429 saves most one-off invocations that don't ship an App
+// Token from failing on the first hit. Honors Retry-After when the
+// server sets it.
+func (c *Client) doWithRetry(req *http.Request) (*http.Response, error) {
+	maxRetries := c.MaxRetries
+	if maxRetries == 0 {
+		maxRetries = defaultMaxRetries
+	} else if maxRetries < 0 {
+		maxRetries = 0
+	}
+	base := c.RetryBase
+	if base == 0 {
+		base = defaultRetryBase
+	}
+	for attempt := 0; ; attempt++ {
+		resp, err := c.HTTP.Do(req)
+		if err != nil {
+			// Network errors aren't retried — the caller's context is
+			// the canonical place to bound the whole operation.
+			return nil, err
+		}
+		if !isRetryable(resp.StatusCode) || attempt >= maxRetries {
+			return resp, nil
+		}
+		// Drain and close so the connection can be reused, then sleep.
+		wait := retryAfter(resp, base, attempt)
+		_, _ = io.Copy(io.Discard, resp.Body)
+		resp.Body.Close()
+		select {
+		case <-req.Context().Done():
+			return nil, req.Context().Err()
+		case <-time.After(wait):
+		}
+	}
+}
+
+func isRetryable(status int) bool {
+	if status == http.StatusTooManyRequests {
+		return true
+	}
+	return status >= 500 && status <= 599
+}
+
+// retryAfter returns the delay before the next attempt. Prefer the
+// server's Retry-After hint when present; otherwise back off exponentially
+// from base. The hint can be either an integer number of seconds or an
+// HTTP-date, per RFC 7231 §7.1.3.
+func retryAfter(resp *http.Response, base time.Duration, attempt int) time.Duration {
+	if h := resp.Header.Get("Retry-After"); h != "" {
+		if secs, err := strconv.Atoi(strings.TrimSpace(h)); err == nil && secs >= 0 {
+			return time.Duration(secs) * time.Second
+		}
+		if t, err := http.ParseTime(h); err == nil {
+			if d := time.Until(t); d > 0 {
+				return d
+			}
+		}
+	}
+	return base << attempt
 }
 
 func trim(s string, n int) string {
