@@ -762,14 +762,16 @@ func pullAll(ctx context.Context, c *socrata.Client, p portals.Portal,
 		default:
 			jsonRows = append(jsonRows, rows...)
 		}
+		fmt.Fprintf(params.stderr, "fetched %d rows (offset=%d)\n", len(rows), offset)
 		total += len(rows)
-		fmt.Fprintf(params.stderr, "fetched %d rows (offset=%d)\n", total, offset+pageSize)
 		if len(rows) < pageSize {
 			break
 		}
 	}
 	if sink != nil {
 		fmt.Fprintf(params.stderr, "wrote %d rows into %s (table %s)\n", total, params.dbPath, sink.Table)
+	} else {
+		fmt.Fprintf(params.stderr, "fetched %d rows total\n", total)
 	}
 	return nil
 }
