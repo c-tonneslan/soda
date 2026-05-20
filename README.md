@@ -46,7 +46,14 @@ $ soda open nyc erm2-nwe9                              # open in browser
 | (default) | Pretty JSON array |
 | `--format ndjson` | Newline-delimited JSON, one row per line (great for `jq`) |
 | `--format csv` / `--csv` | CSV |
+| `--format geojson` | GeoJSON `FeatureCollection`, geometry pulled from the row's location column |
 | `--to <file.db>` | SQLite database, one table per dataset, upserts on `:id` |
+
+A lot of Socrata datasets carry a location/point column. `--format geojson`
+turns each row into a GeoJSON `Feature` (that column becomes the geometry,
+everything else becomes properties), so a pulled dataset drops straight into
+geojson.io, QGIS, or a Leaflet map. Rows with no location get a `null`
+geometry, which is still valid GeoJSON.
 
 `--all` walks every row across pages. `--cache` keeps GET responses on disk
 under `~/.cache/soda/` so iterative work doesn't keep hitting Socrata.

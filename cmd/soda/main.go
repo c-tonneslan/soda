@@ -29,7 +29,7 @@ var version = "0.4.0"
 
 // Global flags applied across every command via PersistentFlags.
 type globalFlags struct {
-	verbose bool
+	verbose  bool
 	useCache bool
 }
 
@@ -207,9 +207,11 @@ func newPullCmd(g *globalFlags) *cobra.Command {
 		Long: `Download dataset rows.
 
 Default output is JSON. --format=csv emits CSV, --format=ndjson emits one
-JSON object per line. --to <file.db> writes into a SQLite database (one
-table per dataset, named after the four-by-four). With --all, soda
-auto-paginates through the entire dataset; without it you get one page.`,
+JSON object per line, and --format=geojson emits a FeatureCollection
+(handy for datasets with a location column). --to <file.db> writes into a
+SQLite database (one table per dataset, named after the four-by-four).
+With --all, soda auto-paginates through the entire dataset; without it
+you get one page.`,
 		Args: cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			p, err := portals.Get(args[0])
@@ -262,6 +264,9 @@ auto-paginates through the entire dataset; without it you get one page.`,
 			if fmtName == "ndjson" {
 				return convertJSONToNDJSON(body, dest)
 			}
+			if fmtName == "geojson" {
+				return convertJSONToGeoJSON(body, dest)
+			}
 			n, err := io.Copy(dest, body)
 			if err != nil {
 				return err
@@ -272,7 +277,7 @@ auto-paginates through the entire dataset; without it you get one page.`,
 			return nil
 		},
 	}
-	cmd.Flags().StringVar(&format, "format", "json", "Output format: json, csv, or ndjson")
+	cmd.Flags().StringVar(&format, "format", "json", "Output format: json, csv, ndjson, or geojson")
 	cmd.Flags().IntVar(&limit, "limit", 0, "Max rows per request (0 = Socrata's default of 1000)")
 	cmd.Flags().IntVar(&offset, "offset", 0, "Pagination offset")
 	cmd.Flags().IntVar(&pageSize, "page-size", 50000, "Rows per request when paging with --all (cap 50000)")
@@ -701,6 +706,7 @@ func pullAll(ctx context.Context, c *socrata.Client, p portals.Portal,
 	var jsonRows []map[string]any
 	var closer func() error = func() error { return nil }
 	asJSONArray := params.format == "" || params.format == "json"
+	asGeoJSON := params.format == "geojson"
 
 	if params.dbPath != "" {
 		schema, err := c.Info(ctx, p.Host, id)
@@ -729,6 +735,12 @@ func pullAll(ctx context.Context, c *socrata.Client, p portals.Portal,
 			// Accumulate; we'll write the array at the end so the JSON is valid.
 			defer func() {
 				_ = output.JSON(w, jsonRows)
+				_ = closer()
+			}()
+		} else if asGeoJSON {
+			// Accumulate; the FeatureCollection is one object, written at the end.
+			defer func() {
+				_ = output.GeoJSON(w, jsonRows)
 				_ = closer()
 			}()
 		}
@@ -801,6 +813,14 @@ func convertJSONToNDJSON(body io.Reader, w io.Writer) error {
 		}
 	}
 	return nil
+}
+
+func convertJSONToGeoJSON(body io.Reader, w io.Writer) error {
+	var rows []map[string]any
+	if err := json.NewDecoder(body).Decode(&rows); err != nil {
+		return fmt.Errorf("decode page for geojson: %w", err)
+	}
+	return output.GeoJSON(w, rows)
 }
 
 // hint wraps a socrata APIError with a friendlier message for known cases.
