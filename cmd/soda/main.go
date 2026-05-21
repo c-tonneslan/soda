@@ -705,9 +705,9 @@ func pullAll(ctx context.Context, c *socrata.Client, p portals.Portal,
 	var ndjsonOut io.Writer
 	var jsonRows []map[string]any
 	var closer func() error = func() error { return nil }
-	asJSONArray := params.format == "" || params.format == "json"
 	asGeoJSON := params.format == "geojson"
 
+	var w io.Writer = os.Stdout
 	if params.dbPath != "" {
 		schema, err := c.Info(ctx, p.Host, id)
 		if err != nil {
@@ -720,7 +720,6 @@ func pullAll(ctx context.Context, c *socrata.Client, p portals.Portal,
 		sink = s
 		closer = sink.Close
 	} else {
-		var w io.Writer = os.Stdout
 		if params.outPath != "" {
 			f, err := os.Create(params.outPath)
 			if err != nil {
@@ -731,18 +730,6 @@ func pullAll(ctx context.Context, c *socrata.Client, p portals.Portal,
 		}
 		if params.format == "ndjson" {
 			ndjsonOut = w
-		} else if asJSONArray {
-			// Accumulate; we'll write the array at the end so the JSON is valid.
-			defer func() {
-				_ = output.JSON(w, jsonRows)
-				_ = closer()
-			}()
-		} else if asGeoJSON {
-			// Accumulate; the FeatureCollection is one object, written at the end.
-			defer func() {
-				_ = output.GeoJSON(w, jsonRows)
-				_ = closer()
-			}()
 		}
 	}
 	defer closer()
@@ -780,6 +767,19 @@ func pullAll(ctx context.Context, c *socrata.Client, p portals.Portal,
 			break
 		}
 	}
+	// json and geojson accumulate every page so the final document is a
+	// single valid JSON value. That write has to land before the deferred
+	// closer() runs, so it can't itself be deferred.
+	if sink == nil && ndjsonOut == nil {
+		if asGeoJSON {
+			if err := output.GeoJSON(w, jsonRows); err != nil {
+				return err
+			}
+		} else if err := output.JSON(w, jsonRows); err != nil {
+			return err
+		}
+	}
+
 	if sink != nil {
 		fmt.Fprintf(params.stderr, "wrote %d rows into %s (table %s)\n", total, params.dbPath, sink.Table)
 	} else {
