@@ -31,11 +31,11 @@ type Client struct {
 	AppToken string // optional Socrata App Token; required for high-volume use, otherwise rate-limited
 
 	// MaxRetries is the number of additional attempts on retryable
-	// responses (HTTP 429 and 5xx). Zero disables retries; <0 leaves it
-	// at the default (3).
+	// responses (HTTP 429 and 5xx). The zero value uses the default of 3.
+	// Set it negative to disable retries entirely.
 	MaxRetries int
 	// RetryBase is the base delay for exponential backoff between
-	// retries. Zero leaves it at the default (500ms). A Retry-After
+	// retries. The zero value uses the default of 500ms. A Retry-After
 	// header from the server overrides this for that one attempt.
 	RetryBase time.Duration
 }

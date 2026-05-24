@@ -77,9 +77,19 @@ func Compute(a, b []Row, keyCol string) (*Result, error) {
 			res.Changed = append(res.Changed, ChangedRow{Key: k, Changes: changes})
 		}
 	}
-	// Deterministic ordering so output is reproducible.
+	// Deterministic ordering so output is reproducible. Map iteration
+	// above doesn't guarantee an order, so re-key on the column and sort
+	// every section, not just Changed.
+	sortRowsByKey(res.Added, keyCol)
+	sortRowsByKey(res.Removed, keyCol)
 	sort.Slice(res.Changed, func(i, j int) bool { return res.Changed[i].Key < res.Changed[j].Key })
 	return res, nil
+}
+
+func sortRowsByKey(rows []Row, keyCol string) {
+	sort.Slice(rows, func(i, j int) bool {
+		return fmt.Sprint(rows[i][keyCol]) < fmt.Sprint(rows[j][keyCol])
+	})
 }
 
 func indexBy(rows []Row, keyCol string) (map[string]Row, error) {
